@@ -1,0 +1,769 @@
+---
+title: "Performance and Salary Prediction for NBA Players"
+author: "MD SHABREZ 20BCE1690"
+date: "2023-01-01"
+output: html_document
+---
+
+# 1. Data Preparation
+Loading packages
+```{r}
+library(corrplot)
+library(tidyverse)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(GGally)
+library(dplyr)
+library(plotly)
+```
+
+Importing datasets
+```{r}
+sal=read.csv('nbaSalaryStats.csv',header=T)
+```
+
+We will take a look at the Salary Dataset first
+```{r}
+str(sal)
+```
+
+Removing duplicates
+```{r}
+sal <- sal %>% 
+  group_by(Player) %>% 
+  filter(G == max(G)) %>% 
+  distinct
+
+sal$Salary=as.numeric(sal$Salary) 
+head(sal, 5)
+```
+
+We will look remove all the records with salary= NA
+```{r}
+sal<- sal %>% drop_na(Salary)
+```
+
+Checking for NA's
+```{r}
+sum(!complete.cases(sal))
+```
+Seeing which columns have NA values
+```{r}
+summary(sal)
+```
+Removing Null values
+```{r}
+sal <- sal[complete.cases(sal), ]
+
+summary(sal)
+```
+
+Removing columns that are of no use to us
+```{r}
+sal=subset(sal, select=-c(Tm,FGA,X2PA,X3PA,FTA,X2P,X3P,FT,FG,FGA))
+```
+
+```{r}
+hist(sal$Salary, breaks=50, 
+     main='Salary Histogram',
+     xlab='Salary(tens of millions)',
+     ylab='Frequency')
+
+```
+
+The NBA salaries follow a highly right-skewed distribution, which is reasonable considering that a few elite players earn significantly higher salaries than the average player. This is because there are only a handful of star players compared to the numerous players attempting to maintain their position in the league.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+data = sal
+
+dataPG <- data %>% filter(Pos == "PG")
+dataSG <- data %>% filter(Pos == "SG")
+dataSF <- data %>% filter(Pos == "SF")
+dataPF <- data %>% filter(Pos == "PF")
+dataC <- data %>% filter(Pos == "C")
+
+avgTRB <- c(mean(dataPG$TRB), mean(dataSG$TRB), mean(dataSF$TRB), mean(dataPF$TRB), mean(dataC$TRB))
+avgAST <- c(mean(dataPG$AST), mean(dataSG$AST), mean(dataSF$AST), mean(dataPF$AST), mean(dataC$AST))
+avgBLK <- c(mean(dataPG$BLK), mean(dataSG$BLK), mean(dataSF$BLK), mean(dataPF$BLK), mean(dataC$BLK))
+avgSTL <- c(mean(dataPG$STL), mean(dataSG$STL), mean(dataSF$STL), mean(dataPF$STL), mean(dataC$STL))
+
+df <- data.frame(Position = c("PG", "SG", "SF", "PF", "C"),
+                 TRB = avgTRB,
+                 AST = avgAST,
+                 BLK = avgBLK,
+                 STL = avgSTL)
+
+ggplot(df, aes(x = Position)) +
+  geom_bar(aes(y = TRB, fill = "TRB"), stat = "identity", position = position_dodge(width = 0.6), width = 0.2, alpha = 0.8, color = "black") +
+  geom_bar(aes(y = AST, fill = "AST"), stat = "identity", position = position_dodge(width = 0.6), width = 0.2, alpha = 0.8, color = "black") +
+  geom_bar(aes(y = BLK, fill = "BLK"), stat = "identity", position = position_dodge(width = 0.6), width = 0.2, alpha = 0.8, color = "black") +
+  geom_bar(aes(y = STL, fill = "STL"), stat = "identity", position = position_dodge(width = 0.6), width = 0.2, alpha = 0.8, color = "black") +
+  labs(x = "Position", y = "Stat Per Game", fill = "Statistic") +
+  scale_fill_manual(values = c("blue", "green", "red", "black")) +
+  theme_classic() +
+  guides(fill = guide_legend(title = "Stats Distribution by Postion"))
+
+
+```
+
+The bar chart displays the mean values of four statistics (rebounds, assists, blocks, and steals) for each position in basketball. It indicates that centers and power forwards excel in rebounds and blocks, while point guards and shooting guards perform better in assists and steals. As positions in basketball fulfill distinct roles for a team, these dissimilarities must be taken into consideration when determining salaries.
+
+# 2. Correlation Check
+```{r}
+sal2=subset(sal, select=-c(Player,Pos))
+correlation=cor(sal2[,colnames(sal2)!="Salary"],sal2$Salary)
+correlation
+```
+```{r}
+stats=c("Salary", "PTS", "MP", "TOV", "TRB", "STL", "AST")
+stats_salary_cor <- 
+  sal2 %>% 
+  select(Salary, PTS, MP, TOV, TRB, STL, AST)
+ggpairs(stats_salary_cor)
+```
+```{r}
+corrplot(cor(sal2 %>% select(Salary, Age:PTS),use="complete.obs"),method = 'circle',type="upper")
+```
+
+
+Correlation Stats
+
+```{r}
+cor(stats_salary_cor)[,"Salary"]
+```
+
+
+As we can see, the correlation strength is: PTS>TOV>MP>AST>STL>TRB
+
+# 3. Data Visualization
+```{r}
+text <- paste("Player: ", sal$Player,
+              "<br>Salary: ", format(sal$Salary, big.mark = ","),"$",
+              "<br>PTS: ", round(sal$PTS, digits = 3),
+              "<br>POS: ", sal$Pos)
+
+# Create a ggplot2 plot
+ggplot(data = sal, aes(x = Salary, y = PTS, color = Pos, text = text)) +
+  geom_point() +
+  ggtitle("Salary vs Point Per Game") +
+  xlab("Salary USD") +
+  ylab("Point per Game") +
+  theme_bw() +
+  theme(plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 12, face = "bold"),
+        axis.text = element_text(size = 10),
+        legend.title = element_text(size = 10, face = "bold"),
+        legend.text = element_text(size = 9))
+```
+
+# 4. Simple Linear Regression Model
+```{r}
+#removing outliers of points
+boxplot(sal$PTS)
+outliers_pts=boxplot(sal$PTS,plot=FALSE)$out
+outliers_pts
+sal_pts=sal %>% filter(!(PTS %in% outliers_pts))
+boxplot(sal_pts$PTS)
+```
+
+Linear Regression
+
+```{r}
+sal_pts %>% ggplot(aes(x=Salary,y=PTS))+geom_point()+geom_smooth(method='lm')
+```
+
+Regression Analysis
+
+```{r}
+set.seed(44)
+rel=lm(sal_pts$Salary~sal_pts$PTS)
+summary(rel)
+```
+
+Prediction
+
+```{r}
+pts_predict=predict(rel,sal_pts)
+data_pts=data.frame(Predicted=pts_predict,Observed=sal_pts$Salary)
+ggplot(data_pts,aes(x=pts_predict,y=Observed))+geom_point()+geom_abline(intercept=0,slope=1,color="red",size=2)
+```
+
+# 5. Multiple Linear Regression
+
+outliers
+
+```{r}
+boxplot(sal_pts$TOV)
+outliers_mult=boxplot(sal_pts$TOV,plot=FALSE)$out
+outliers_mult
+sal_mult=sal_pts %>% filter(!(TOV %in% outliers_mult))
+boxplot(sal_mult$TOV)
+
+boxplot(sal_mult$AST)
+outliers_mult=boxplot(sal_mult$AST,plot=FALSE)$out
+outliers_mult
+sal_mult=sal_mult %>% filter(!(AST %in% outliers_mult))
+boxplot(sal_mult$AST)
+
+```
+
+```{r}
+set.seed(44)
+mult=lm(sal$Salary~sal$PTS+sal$TOV+sal$MP+sal$AST)
+mlr_predict=predict(mult,sal)
+data_mlr=data.frame(Predicted=mlr_predict,Observed=sal$Salary)
+ggplot(data_mlr,aes(x=mlr_predict,y=Observed))+geom_point()+geom_abline(intercept=0,slope=1,color="red",size=2)
+```
+```{r}
+summary(mult)
+```
+```{r}
+sal_pred_mlr=predict(mult,sal_mult)
+results2=cbind(sal_mult$Player,sal_pred_mlr,sal_mult$Salary)
+colnames(results2)=c("Name","pred","real")
+results.mult=as.data.frame(results2)
+results.mult$pred=as.numeric(results.mult$pred)
+results.mult$real=as.numeric(results.mult$real)
+head(results.mult, 10)
+```
+
+# 6. Random Forest Regression
+
+```{r}
+
+library(randomForest)
+set.seed(44)
+#shuffle the dataset
+sal=sal[sample(1:nrow(sal)),]
+
+#random forest
+samp=sample(nrow(sal),0.8*nrow(sal))
+train=sal[samp,]
+test=sal[-samp,]
+salary.rf=randomForest(Salary ~ .,data=train,mtry=4,ntree = 2000, importance=TRUE,na.action=na.omit)
+salary.rf
+```
+
+```{r}
+sal_pred=predict(salary.rf,test)
+results3=cbind(test$Player,sal_pred,test$Salary)
+colnames(results3)=c("Name","pred","real")
+results.rf=as.data.frame(results3)
+results.rf$pred=as.numeric(results.rf$pred)
+results.rf$real=as.numeric(results.rf$real)
+head(results.rf, 10)
+```
+```{r}
+plot(salary.rf)
+
+```
+
+# 7. Making Labeled Data for Salary Range
+
+```{r}
+# Define the salary range and corresponding labels
+salary_range <- c(0, 15e6, 30e6, 46e6)
+salary_labels <- c("L", "M", "H")
+
+# Categorize the salaries into three categories
+sal$Salary_Class <- cut(sal$Salary, breaks = salary_range, labels = salary_labels)
+
+# View the updated dataframe
+head(sal, 10)
+
+```
+
+# 8. K - Nearest Neighbour
+
+```{r}
+library(e1071)
+library(caTools)
+library(class)
+library(caret)
+
+set.seed(44)
+
+# Select the relevant columns
+sal_select <- sal[, c(4:22)]
+
+sal_select = na.omit(sal_select)
+
+data = sal_select
+
+# Split the data into training and test sets
+trainIndex <- createDataPartition(data$Salary_Class, p = 0.7, list = FALSE)
+trainData <- data[trainIndex, ]
+testData <- data[-trainIndex, ]
+
+# Scale the features in the training and test sets
+preproc <- preProcess(trainData[,1:18], method=c("center", "scale"))
+trainData[,1:18] <- predict(preproc, trainData[,1:18])
+testData[,1:18] <- predict(preproc, testData[,1:18])
+
+# Train the KNN model
+knnFit <- train(Salary_Class ~ ., data = trainData, method = "knn", tuneLength = 10,
+                trControl = trainControl(method = "cv", number = 5))
+
+# Use the trained model to make predictions on the test set
+predictions <- predict(knnFit, testData)
+
+# Evaluate the accuracy of the model
+confusionMatrix(predictions, testData$Salary_Class)
+
+```
+
+# 9. Random Forest
+
+```{r}
+library(e1071)
+library(caTools)
+library(class)
+library(caret)
+library(randomForest)
+
+set.seed(44)
+
+# Select the relevant columns
+sal_select <- sal[, c(4:22)]
+
+sal_select = na.omit(sal_select)
+
+data = sal_select
+
+
+# Split the data into training and test sets
+trainIndex <- createDataPartition(data$Salary_Class, p = 0.7, list = FALSE)
+trainData <- data[trainIndex, ]
+testData <- data[-trainIndex, ]
+
+# Train the Random Forest model
+rfFit <- randomForest(Salary_Class ~ ., data = trainData, ntree= 500)
+
+# Use the trained model to make predictions on the test set
+predictions <- predict(rfFit, testData)
+
+# Evaluate the accuracy of the model
+confusionMatrix(predictions, testData$Salary_Class)
+
+```
+```{r}
+library(e1071)
+library(caTools)
+library(class)
+library(caret)
+library(randomForest)
+set.seed(44)
+# Select the relevant columns
+sal_select <- sal[, c(4:22)]
+
+sal_select = na.omit(sal_select)
+
+data = sal_select
+
+# Split the data into training and test sets
+trainIndex <- createDataPartition(data$Salary_Class, p = 0.7, list = FALSE)
+trainData <- data[trainIndex, ]
+testData <- data[-trainIndex, ]
+
+# Scale the features in the training and test sets
+preproc <- preProcess(trainData[,1:18], method=c("center", "scale"))
+trainData[,1:18] <- predict(preproc, trainData[,1:18])
+testData[,1:18] <- predict(preproc, testData[,1:18])
+
+# Train the KNN model
+knnFit <- train(Salary_Class ~ ., data = trainData, method = "knn", tuneLength = 10,
+                trControl = trainControl(method = "cv", number = 10))
+
+# Use the trained model to make predictions on the test set
+knn_predictions <- predict(knnFit, testData)
+
+# Evaluate the accuracy of the KNN model
+knn_cm <- confusionMatrix(knn_predictions, testData$Salary_Class)
+knn_accuracy <- knn_cm$overall["Accuracy"]
+
+# Train the Random Forest model
+rfFit <- randomForest(Salary_Class ~ ., data = trainData, ntree= 500)
+
+# Use the trained model to make predictions on the test set
+rf_predictions <- predict(rfFit, testData)
+
+# Evaluate the accuracy of the Random Forest model
+rf_cm <- confusionMatrix(rf_predictions, testData$Salary_Class)
+rf_accuracy <- rf_cm$overall["Accuracy"]
+
+# Create a data frame with the accuracy information
+accuracy_df <- data.frame(Model = c("KNN", "Random Forest"),
+                           Accuracy = c(knn_accuracy, rf_accuracy))
+
+# Create a colorful bar graph with a legend of the accuracy comparison
+library(ggplot2)
+
+ggplot(accuracy_df, aes(x = Model, y = Accuracy, fill = Model)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  scale_fill_manual(values = c("#F8766D", "#00BFC4")) +
+  ggtitle("Accuracy Comparison Between KNN and Random Forest Models") +
+  xlab("Model") +
+  ylab("Accuracy") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+# 10. Performance Analysis
+
+Importing Dataset
+
+```{r}
+games_details=read.csv('games_details.csv',header=T)
+games <- read.csv("games.csv")
+teams = read.csv('teams.csv',header=T)
+summary(games_details)
+summary(games)
+summary(teams)
+head(games_details, 10)
+head(games, 10)
+head(teams, 10)
+```
+
+Removing Null values
+
+```{r}
+games_details <- games_details[complete.cases(games_details), ]
+games <- games[complete.cases(games), ]
+teams <- teams[complete.cases(teams), ]
+```
+
+```{r}
+library(tidyverse)
+
+games_summary <- games %>%
+  group_by(SEASON) %>%
+  summarise(avg_pts_home = mean(PTS_home),
+            avg_pts_away = mean(PTS_away))
+
+ggplot(games_summary, aes(x = SEASON, y = avg_pts_home, color = "Home Team")) +
+  geom_line() +
+  geom_line(aes(y = avg_pts_away, color = "Away Team")) +
+  scale_color_manual("", values = c("red", "blue")) +
+  labs(title = "Season-wise comparison of average points scored by home and away teams",
+       x = "Season",
+       y = "Average points scored") +
+  theme_minimal()
+```
+
+we can clearly see the home team has higher Average Points Scored over Away Team throughout all season
+
+Top teams by games wins
+
+```{r}
+plot_top <- function(df, column, label_col=NULL, max_plot=5) {
+  top_df <- head(arrange(df, desc({{column}})), max_plot)
+  
+  height <- top_df[[column]]
+  x <- if (is.null(label_col)) rownames(top_df) else top_df[[label_col]]
+  
+  colors <- c("#FFA400", "#bdc3c7", "#cd7f32", "#3498db")[1:length(top_df)]
+  
+  fig <- barplot(height, names.arg=x, col=colors, main=paste("Top", max_plot, "of", column), xlab=label_col, ylab=column, las=2, cex.names=0.5)
+  
+}
+
+winning_teams <- ifelse(games$HOME_TEAM_WINS == 1, games$HOME_TEAM_ID, games$VISITOR_TEAM_ID)
+winning_teams <- data.frame(TEAM_ID = winning_teams)
+winning_teams <- merge(winning_teams, teams[c('TEAM_ID', 'NICKNAME')], by = 'TEAM_ID')
+winning_teams <- table(winning_teams$NICKNAME)
+winning_teams <- as.data.frame(winning_teams)
+names(winning_teams) <- c('TEAM NAME', 'Number of wins')
+
+winning_teams <- arrange(winning_teams, desc(`Number of wins`))
+
+plot_top(winning_teams, column='Number of wins', label_col='TEAM NAME', max_plot=10)
+```
+
+```{r}
+library(ggplot2)
+library(cowplot)
+
+# Load data from CSV file
+data2 <- games
+
+# Create histogram with 20 bins for home team
+p1 <- ggplot(data2, aes(x = PTS_home)) +
+  geom_histogram(bins = 20, fill = "steelblue", alpha = 0.5) +
+  
+  # Add vertical lines for mean and 5th/95th percentiles
+  geom_vline(xintercept = mean(data2$PTS_home, na.rm = TRUE), color = "red") +
+  geom_vline(xintercept = quantile(data2$PTS_home, probs = 0.05), color = "green") +
+  geom_vline(xintercept = quantile(data2$PTS_home, probs = 0.95), color = "green") +
+  
+  # Add labels and title
+  xlab("Points scored by Home Team") +
+  ylab("Number of Matches") +
+  ggtitle("Histogram: Points Scored by Home Team") +
+  
+  # Adjust the appearance of the plot
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        panel.grid = element_blank(),
+        panel.border = element_blank())
+
+# Create histogram with 20 bins for away team
+p2 <- ggplot(data2, aes(x = PTS_away)) +
+  geom_histogram(bins = 20, fill = "steelblue", alpha = 0.5) +
+  
+  # Add vertical lines for mean and 5th/95th percentiles
+  geom_vline(xintercept = mean(data2$PTS_away, na.rm = TRUE), color = "red") +
+  geom_vline(xintercept = quantile(data2$PTS_away, probs = 0.05), color = "green") +
+  geom_vline(xintercept = quantile(data2$PTS_away, probs = 0.95), color = "green") +
+  
+  # Add labels and title
+  xlab("Points scored by Away Team") +
+  ylab("Number of Matches") +
+  ggtitle("Histogram: Points Scored by Away Team") +
+  
+  # Adjust the appearance of the plot
+  theme_classic() +
+  theme(plot.title = element_text(size = 16, face = "bold"),
+        axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        panel.grid = element_blank(),
+        panel.border = element_blank())
+
+# Display both histograms side by side
+plot_grid(p1, p2, ncol = 2)
+
+
+```
+
+90% percentile range of Scores for both Home Team and Away Team
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Convert the MIN column from a string to a time format
+games_details$MIN <- as.POSIXct(games_details$MIN, format = "%M:%S")
+
+# Plot 1: Minutes played distribution by team
+ggplot(games_details, aes(x = MIN, fill = TEAM_ABBREVIATION)) + 
+  geom_density(alpha = 0.7) +
+  labs(title = "Minutes Played Distribution by Team", x = "Minutes Played", y = "Density")
+```
+
+```{r}
+# Plot 2: Points scored by team and player position
+ggplot(games_details, aes(x = START_POSITION, y = PTS, fill = TEAM_ABBREVIATION)) + 
+  geom_boxplot() +
+  labs(title = "Points Scored by Team and Player Position", x = "Starting Position", y = "Points")
+```
+
+We can see that Guard has the highest points scored across all the teams as they are the front most players and Guards are normally the shortest players on the court. They use their speed and quickness for dribbling, passing, and shooting on offense. They often guard the perimeter of the court on defense.
+
+Top Players by games played
+
+```{r}
+
+
+library(dplyr)
+
+players_name <- games_details$PLAYER_NAME
+val_cnt <- as.data.frame(table(players_name))
+colnames(val_cnt) <- c("PLAYER_NAME", "Number of games")
+
+val_cnt <- arrange(val_cnt, desc(`Number of games`))
+
+plot_top(val_cnt, column="Number of games", label_col="PLAYER_NAME", max_plot=10)
+
+
+```
+
+We take LeBron James for Time series Forecasting as he has played for the longest i.e. has larger past data
+
+```{r}
+# Load required packages
+library(tidyverse)
+library(lubridate)
+library(tsibble)
+library(forecast)
+
+# Load games and game details datasets
+games <- read.csv("games.csv")
+games_details <- read.csv("games_details.csv")
+
+# Merge datasets
+games_full <- games_details %>% 
+  select(GAME_ID, PLAYER_ID, PTS) %>% 
+  inner_join(games, by = "GAME_ID")
+
+# Filter games for LeBron James
+lebron_games <- games_full %>% 
+  filter(PLAYER_ID == 2544)
+
+# Convert GAME_DATE_EST to date format
+lebron_games$GAME_DATE_EST <- ymd(lebron_games$GAME_DATE_EST)
+
+# Create time series of LeBron's points per game
+lebron_ts <- lebron_games %>% 
+  select(GAME_DATE_EST, PTS) %>% 
+  group_by(GAME_DATE_EST) %>% 
+  summarise(PTS = sum(PTS)) %>% 
+  as_tsibble(index = GAME_DATE_EST)
+
+
+
+str(lebron_ts)
+```
+
+Making Time Series Data for LeBron James
+
+```{r}
+# Convert the GAME_DATE_EST column to year-month format
+lebron_ts$year_year <- format(lebron_ts$GAME_DATE_EST, "%Y")
+
+# Use the aggregate function to calculate the monthly total of the PTS column
+lebron_ts_yearly <- aggregate(PTS ~ year_year, data = lebron_ts, sum)
+
+# Print the resulting monthly time series data
+head(lebron_ts_yearly, 10)
+
+```
+
+Converting to time series object
+
+```{r}
+# Convert the data into a time series object
+lebron_ts <- ts(lebron_ts_yearly$PTS, start = c(2003), end = c(2022), frequency = 1)
+
+```
+
+# 11. ARIMA 
+
+```{r}
+library(forecast)
+
+# Fit an ARIMA model to the time series
+arima_model <- auto.arima(lebron_ts)
+
+# Print the model summary
+summary(arima_model)
+
+#Forecast 4 steps ahead
+forecast_prices <- forecast(arima_model, h = 4)
+
+#Plot forecast
+plot(forecast_prices)
+```
+
+# 12. Simple Moving Average 
+
+```{r}
+# Calculate a 2-year moving average
+library(TTR)
+sma <- SMA(lebron_ts, n = 2)
+# Combine the moving average and original time series as a dataframe
+df <- cbind(sma, lebron_ts_yearly$PTS)
+
+# Rename the columns
+colnames(df) <- c("SMA", "PTS")
+
+# Calculate MAPE
+mape <- accuracy(sma, lebron_ts_yearly$PTS)[, "MAPE"]
+
+# Print the dataframe and MAPE
+cat("Moving Average Results:\n")
+print(df)
+cat("MAPE:", mape, "\n")
+str(df)
+```
+```{r}
+df <- as.data.frame(df)
+```
+
+```{r}
+library(ggplot2)
+
+# Create a sample data frame
+df <- data.frame(
+  Time = seq(as.Date("2003-01-01"), as.Date("2022-01-01"), by = "year"),
+  SMA = df$SMA,
+  PTS = df$PTS
+)
+
+# Plot the line graph
+ggplot(df, aes(Time)) +
+  geom_line(aes(y = SMA, color = "SMA")) +
+  geom_line(aes(y = PTS, color = "PTS")) +
+  labs(title = "Comparison of SMA and PTS", x = "Time", y = "Value") +
+  scale_color_manual(values = c("SMA" = "red", "PTS" = "blue"))
+
+
+
+```
+
+We can clearly observe that SMA is very close to the real observed PTS yearly
+
+# 13. Exponential Smoothing
+
+```{r}
+library(forecast)
+
+# Fit an Exponential Smoothing model to the time series
+es_model <- ets(lebron_ts)
+
+# Print the model summary
+summary(es_model)
+
+plot(es_model)
+```
+
+```{r}
+library(ggplot2)
+
+# Calculate MAPE for ARIMA model
+arima_mape <- accuracy(arima_model$fitted, lebron_ts_yearly$PTS)[, "MAPE"]
+
+# Calculate MAPE for 2-year Moving Average
+mape <- accuracy(sma, lebron_ts_yearly$PTS)[, "MAPE"]
+
+# Calculate MAPE for Exponential Smoothing model
+es_mape <- accuracy(es_model$fitted, lebron_ts_yearly$PTS)[, "MAPE"]
+
+# Create a data frame with MAPE values for each method
+mape_df <- data.frame(Method = c("ARIMA", "2-year Moving Average", "Exponential Smoothing"),
+                      MAPE = c(arima_mape, mape, es_mape))
+
+# Create a bar plot of MAPE values
+ggplot(mape_df, aes(x = Method, y = MAPE, fill = Method)) +
+  geom_bar(stat = "identity", color = "black", width = 0.5) +
+  labs(title = "MAPE Comparison",
+       x = "Method",
+       y = "MAPE") +
+  theme_minimal(base_size = 20) +
+  theme(legend.position = "none") +
+  geom_text(aes(label = paste0(round(MAPE, 2), "%")), vjust = 0.5) +
+  coord_flip()
+
+```
+
+We can clearly see that 2-year Moving Average is outperforming Exponential Smoothing and ARIMA. 2-year Moving Average has only 10.84% variance from observed points on an average per year.
+
+```{r}
+str(games)
+```
+
+```{r}
+str(games_details)
+```
+
+```{r}
+str(teams)
+```
+
+
